@@ -8,15 +8,40 @@ from .parents.sql_like import MtgjsonDataType
 
 
 class MysqlConverter(SqlLikeConverter):
+    """A converter class that transforms MTGJSON data into MySQL-compatible SQL format.
+    
+    This class inherits from SqlLikeConverter and implements specific MySQL formatting
+    and conversion logic. It handles the creation of SQL schema and data insertion
+    statements in MySQL format.
+    """
+
     def __init__(
         self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType
     ):
+        """Initialize the MySQL converter.
+
+        Args:
+            mtgjson_data (Dict[str, Any]): The MTGJSON data to be converted
+            output_dir (str): Directory where the output SQL file will be saved
+            data_type (MtgjsonDataType): Type of MTGJSON data being processed
+        """
         super().__init__(mtgjson_data, output_dir, data_type)
+        # Create output directory if it doesn't exist
+        self.output_obj.root_dir.mkdir(parents=True, exist_ok=True)
         self.output_obj.fp = self.output_obj.root_dir.joinpath(
             f"{data_type.value}.sql"
         ).open("w", encoding="utf-8")
 
     def convert(self) -> None:
+        """Convert MTGJSON data to MySQL format and write to output file.
+        
+        This method:
+        1. Generates the SQL schema
+        2. Creates the file header with metadata
+        3. Writes the schema to the file
+        4. Generates and writes the data insertion statements
+        5. Commits the transaction
+        """
         sql_schema_as_dict = self._generate_sql_schema_dict()
         schema_query = self._convert_schema_dict_to_query(
             sql_schema_as_dict,
@@ -47,6 +72,14 @@ class MysqlConverter(SqlLikeConverter):
         self.output_obj.fp.write("\nCOMMIT;")
 
     def create_insert_statement_body(self, data: Dict[str, Any]) -> str:
+        """Create the body of an INSERT statement from the given data.
+
+        Args:
+            data (Dict[str, Any]): Dictionary containing the data to be inserted
+
+        Returns:
+            str: A comma-separated string of properly escaped values for the INSERT statement
+        """
         pre_processed_values = []
         for value in data.values():
             if value is None:
@@ -69,10 +102,10 @@ class MysqlConverter(SqlLikeConverter):
         return ", ".join(pre_processed_values)
 
     def write_statements_to_file(self, data_generator: Iterator[str]) -> None:
-        statements = []
+        """Write SQL statements to the output file.
+
+        Args:
+            data_generator (Iterator[str]): Generator yielding SQL statements to be written
+        """
         for statement in data_generator:
-            statements.append(statement)
-            if len(statements) >= 1_000:
-                self.output_obj.fp.writelines(statements)
-                statements = []
-        self.output_obj.fp.writelines(statements)
+            self.output_obj.fp.write(statement + "\n")

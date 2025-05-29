@@ -10,6 +10,12 @@ nested_dict: Any = lambda: defaultdict(nested_dict)
 
 
 class SqlLikeConverter(AbstractConverter, abc.ABC):
+    def __init__(
+        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType
+    ) -> None:
+        super().__init__(mtgjson_data, output_dir, data_type)
+        self.batch_size = 2_000  # Default batch size for inserts
+
     @abc.abstractmethod
     def create_insert_statement_body(self, data: Dict[str, Any]) -> str:
         raise NotImplementedError()
@@ -32,44 +38,44 @@ class SqlLikeConverter(AbstractConverter, abc.ABC):
 
     def __get_mtgjson_card_generators(self) -> List[Iterator[str]]:
         return [
-            self.__generate_insert_statement("meta", self.get_metadata()),
-            self.__generate_insert_statement("sets", self.get_next_set()),
-            self.__generate_insert_statement("cards", self.get_next_card_like("cards")),
-            self.__generate_insert_statement(
+            self.__generate_batch_insert_statement("meta", self.get_metadata()),
+            self.__generate_batch_insert_statement("sets", self.get_next_set()),
+            self.__generate_batch_insert_statement("cards", self.get_next_card_like("cards")),
+            self.__generate_batch_insert_statement(
                 "tokens", self.get_next_card_like("tokens")
             ),
-            self.__generate_insert_statement(
+            self.__generate_batch_insert_statement(
                 "cardIdentifiers", self.get_next_card_identifier("cards")
             ),
-            self.__generate_insert_statement(
+            self.__generate_batch_insert_statement(
                 "cardLegalities", self.get_next_card_legalities("cards")
             ),
-            self.__generate_insert_statement(
+            self.__generate_batch_insert_statement(
                 "cardRulings", self.get_next_card_ruling_entry("cards")
             ),
-            self.__generate_insert_statement(
+            self.__generate_batch_insert_statement(
                 "cardForeignData", self.get_next_card_foreign_data_entry("cards")
             ),
-            self.__generate_insert_statement(
+            self.__generate_batch_insert_statement(
                 "cardPurchaseUrls", self.get_next_card_purchase_url_entry("cards")
             ),
-            self.__generate_insert_statement(
+            self.__generate_batch_insert_statement(
                 "tokenIdentifiers", self.get_next_card_identifier("tokens")
             ),
-            self.__generate_insert_statement(
+            self.__generate_batch_insert_statement(
                 "setTranslations",
                 self.get_next_set_field_with_normalization("translations"),
             ),
-            self.__generate_insert_statement(
+            self.__generate_batch_insert_statement(
                 "setBoosterContents", self.get_next_booster_contents_entry()
             ),
-            self.__generate_insert_statement(
+            self.__generate_batch_insert_statement(
                 "setBoosterContentWeights", self.get_next_booster_weights_entry()
             ),
-            self.__generate_insert_statement(
+            self.__generate_batch_insert_statement(
                 "setBoosterSheets", self.get_next_booster_sheets_entry()
             ),
-            self.__generate_insert_statement(
+            self.__generate_batch_insert_statement(
                 "setBoosterSheetCards", self.get_next_booster_sheet_cards_entry()
             ),
         ]
@@ -95,20 +101,47 @@ class SqlLikeConverter(AbstractConverter, abc.ABC):
     def __generate_batch_insert_statement(
         self, table_name: str, data_generator: Iterator[Dict[str, Any]]
     ) -> Iterator[str]:
+        """Generate batch INSERT statements for a table.
+
+        Args:
+            table_name (str): Name of the table to insert into
+            data_generator (Iterator[Dict[str, Any]]): Generator yielding data dictionaries
+
+        Yields:
+            str: Batch INSERT statements containing data for the table, with each batch
+                 containing up to self.batch_size rows
+        """
         insert_values = []
         data_keys = ""
+        schema_columns = []
+        
+        # Get all columns from schema
+        schema = self._generate_sql_schema_dict()
+        if table_name in schema:
+            # Get all columns except the unique_constraint metadata and id (auto-increment)
+            schema_columns = sorted([col for col in schema[table_name].keys() 
+                                   if col not in ["unique_constraint", "id"]])
+        
         for obj in data_generator:
-            data_keys = ", ".join(obj.keys())
-            safe_values = f"({self.create_insert_statement_body(obj)})"
+            if not data_keys:  # Only get keys from first object
+                # Use all schema columns, ordered alphabetically
+                data_keys = ", ".join(schema_columns)
+            
+            # Create a new dict with all schema columns, using NULL for missing values
+            # Ensure values are in the same order as columns
+            complete_obj = {col: obj.get(col) for col in schema_columns}
+            safe_values = f"({self.create_insert_statement_body(complete_obj)})"
             insert_values.append(safe_values)
 
-            if len(insert_values) >= 2_000:
+            if len(insert_values) >= self.batch_size:
                 yield_values = ",\n".join(insert_values)
                 insert_values = []
                 yield f"INSERT INTO {table_name} ({data_keys}) VALUES\n{yield_values};\n"
 
-        yield_values = ",\n".join(insert_values)
-        yield f"INSERT INTO {table_name} ({data_keys}) VALUES\n{yield_values};\n"
+        # Create final batch with remaining values
+        if insert_values:
+            yield_values = ",\n".join(insert_values)
+            yield f"INSERT INTO {table_name} ({data_keys}) VALUES\n{yield_values};\n"
 
     def _generate_sql_schema_dict(self) -> Dict[str, Any]:
         schema = nested_dict()
@@ -283,7 +316,9 @@ class SqlLikeConverter(AbstractConverter, abc.ABC):
             for attribute in sorted(table_data.keys()):
                 if "unique_constraint" == attribute:
                     continue
-                q += f"\t{attribute} {table_data[attribute]['type']},\n"
+                # Make all columns nullable by default, except for primary keys and unique constraints
+                nullable = "NULL" if attribute != "id" and attribute != "uuid" else "NOT NULL"
+                q += f"\t{attribute} {table_data[attribute]['type']} {nullable},\n"
 
             if "unique_constraint" in table_data.keys():
                 q += f"\tUNIQUE ({','.join(table_data['unique_constraint'])}),\n"
