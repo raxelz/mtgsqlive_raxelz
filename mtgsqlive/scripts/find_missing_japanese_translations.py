@@ -104,7 +104,7 @@ def generate_sql_inserts(found_translations: List[Tuple[str, str, str, str, str,
         # Write header
         f.write("-- Generated SQL inserts for missing Japanese translations\n")
         f.write(f"-- Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-        f.write("BEGIN TRANSACTION;\n\n")
+        f.write("START TRANSACTION;\n\n")
         
         # Process translations in batches
         for i in range(0, len(found_translations), batch_size):
@@ -123,7 +123,11 @@ def generate_sql_inserts(found_translations: List[Tuple[str, str, str, str, str,
             sql = "INSERT INTO cardForeignData (uuid, language, name, type, text, flavorText)\n"
             sql += "VALUES\n"
             sql += ",\n".join(values) + "\n"
-            sql += "ON CONFLICT (uuid, language) DO NOTHING;\n\n"
+            sql += "ON DUPLICATE KEY UPDATE\n"
+            sql += "  name = VALUES(name),\n"
+            sql += "  type = VALUES(type),\n"
+            sql += "  text = VALUES(text),\n"
+            sql += "  flavorText = VALUES(flavorText);\n\n"
             f.write(sql)
         
         f.write("COMMIT;\n")
