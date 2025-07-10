@@ -76,6 +76,11 @@ def parse_args() -> argparse.Namespace:
         nargs="*",
         help="Transpose specific sets instead of all sets",
     )
+    parser.add_argument(
+        "--after-date",
+        type=str,
+        help="Only include sets released after this date (format: YYYY-MM-DD)",
+    )
 
     converter_group = parser.add_argument_group(title="Converters")
     converter_group.add_argument(
@@ -111,8 +116,32 @@ def main() -> None:
             if not getattr(args, converter_input_param):
                 del converters_map[converter_input_param]
 
-    mtgjson_input_dir = pathlib.Path(args.input_dir).expanduser()
-    for data_type in MtgjsonDataType:
+    mtgjson_input_path = pathlib.Path(args.input_dir).expanduser()
+    
+    # Handle both file and directory inputs
+    if mtgjson_input_path.is_file():
+        # If input is a file, use its parent directory and process only that file
+        mtgjson_input_dir = mtgjson_input_path.parent
+        filename = mtgjson_input_path.stem  # Get filename without extension
+        
+        # Find matching data type
+        matching_data_type = None
+        for data_type in MtgjsonDataType:
+            if data_type.value == filename:
+                matching_data_type = data_type
+                break
+        
+        if matching_data_type is None:
+            LOGGER.error(f"Unknown file type: {filename}")
+            return
+            
+        data_types_to_process = [matching_data_type]
+    else:
+        # If input is a directory, process all data types
+        mtgjson_input_dir = mtgjson_input_path
+        data_types_to_process = list(MtgjsonDataType)
+    
+    for data_type in data_types_to_process:
         mtgjson_input_file = mtgjson_input_dir.joinpath(f"{data_type.value}.json")
         if not mtgjson_input_file.exists():
             LOGGER.error(f"Cannot locate {mtgjson_input_file}, skipping.")
@@ -124,6 +153,13 @@ def main() -> None:
         if args.sets:
             for set_key in list(mtgjson_input_data["data"].keys()):
                 if set_key not in args.sets:
+                    del mtgjson_input_data["data"][set_key]
+
+        if args.after_date:
+            for set_key in list(mtgjson_input_data["data"].keys()):
+                set_data = mtgjson_input_data["data"][set_key]
+                release_date = set_data.get("releaseDate", "")
+                if release_date <= args.after_date:
                     del mtgjson_input_data["data"][set_key]
 
         for converter in converters_map.values():

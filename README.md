@@ -67,6 +67,10 @@ options:
                         Path to directory that has MTGJSON compiled files, like AllPrintings.json and AllPricesToday.json
   -o OUTPUT_DIR, --output-dir OUTPUT_DIR
                         Where to place translated files
+  -s SETS [SETS ...], --sets SETS [SETS ...]
+                        Transpose specific sets instead of all sets
+  --after-date AFTER_DATE
+                        Only include sets released after this date (format: YYYY-MM-DD)
 
 Converters:
   --all                 Run all ETL operations
@@ -78,6 +82,19 @@ Converters:
 ```
 
 ## Recent Changes
+
+### Date Filtering Support
+
+The script now supports filtering sets by release date using the `--after-date` parameter. This allows you to generate SQL files for only sets released after a specific date:
+
+```bash
+fresh_env/bin/python -m mtgsqlive -i AllPrintings.json -o output --mysql --after-date 2024-01-01
+```
+
+This feature is useful for:
+- Generating incremental updates for newer sets only
+- Creating databases with only recent releases
+- Reducing processing time by excluding older sets
 
 ### Batch Insert SQL Generation
 
