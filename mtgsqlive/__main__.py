@@ -117,38 +117,67 @@ def main() -> None:
                 del converters_map[converter_input_param]
 
     mtgjson_input_path = pathlib.Path(args.input_dir).expanduser()
-    
+
     # Handle both file and directory inputs
     if mtgjson_input_path.is_file():
-        # If input is a file, use its parent directory and process only that file
-        mtgjson_input_dir = mtgjson_input_path.parent
-        filename = mtgjson_input_path.stem  # Get filename without extension
-        
-        # Find matching data type
-        matching_data_type = None
-        for data_type in MtgjsonDataType:
-            if data_type.value == filename:
-                matching_data_type = data_type
-                break
-        
-        if matching_data_type is None:
-            LOGGER.error(f"Unknown file type: {filename}")
-            return
-            
-        data_types_to_process = [matching_data_type]
+        # If input is a file, load it and check its structure
+        with mtgjson_input_path.open(encoding="utf-8") as fp:
+            loaded_data = json.load(fp)
+
+        # Check if this is a single-set file or a multi-set file
+        is_single_set = False
+        if "data" in loaded_data and isinstance(loaded_data["data"], dict):
+            # Check if data contains a single set (has 'code' or 'baseSetSize' keys)
+            # rather than being a dictionary of sets
+            if "code" in loaded_data["data"] or "baseSetSize" in loaded_data["data"]:
+                is_single_set = True
+
+        if is_single_set:
+            # Wrap single-set data into AllPrintings format
+            set_code = loaded_data["data"].get("code", mtgjson_input_path.stem.upper())
+            LOGGER.info(f"Detected single-set file for set: {set_code}")
+
+            files_to_process = [(
+                MtgjsonDataType.MTGJSON_CARDS,
+                {
+                    "meta": loaded_data.get("meta", {}),
+                    "data": {set_code: loaded_data["data"]}
+                },
+                True,  # skip_schema flag for single-set files
+                set_code  # output_filename for single-set files
+            )]
+        else:
+            # Multi-set file - find matching data type
+            filename = mtgjson_input_path.stem
+            matching_data_type = None
+            for data_type in MtgjsonDataType:
+                if data_type.value == filename:
+                    matching_data_type = data_type
+                    break
+
+            if matching_data_type is None:
+                LOGGER.error(f"Unknown file type: {filename}")
+                return
+
+            files_to_process = [(matching_data_type, loaded_data, False, None)]  # Don't skip schema, use default filename
     else:
         # If input is a directory, process all data types
         mtgjson_input_dir = mtgjson_input_path
-        data_types_to_process = list(MtgjsonDataType)
-    
-    for data_type in data_types_to_process:
-        mtgjson_input_file = mtgjson_input_dir.joinpath(f"{data_type.value}.json")
-        if not mtgjson_input_file.exists():
-            LOGGER.error(f"Cannot locate {mtgjson_input_file}, skipping.")
-            continue
+        files_to_process = []
 
-        with mtgjson_input_file.open(encoding="utf-8") as fp:
-            mtgjson_input_data = json.load(fp)
+        for data_type in MtgjsonDataType:
+            mtgjson_input_file = mtgjson_input_dir.joinpath(f"{data_type.value}.json")
+            if not mtgjson_input_file.exists():
+                LOGGER.error(f"Cannot locate {mtgjson_input_file}, skipping.")
+                continue
+
+            with mtgjson_input_file.open(encoding="utf-8") as fp:
+                mtgjson_input_data = json.load(fp)
+
+            files_to_process.append((data_type, mtgjson_input_data, False, None))  # Don't skip schema, use default filename
+
+    # Process all files
+    for data_type, mtgjson_input_data, skip_schema, output_filename in files_to_process:
 
         if args.sets:
             for set_key in list(mtgjson_input_data["data"].keys()):
@@ -164,7 +193,7 @@ def main() -> None:
 
         for converter in converters_map.values():
             LOGGER.info(f"Converting {data_type.value} via {converter.__name__}")
-            converter(mtgjson_input_data, args.output_dir, data_type).convert()
+            converter(mtgjson_input_data, args.output_dir, data_type, skip_schema, output_filename).convert()
             LOGGER.info(f"Converted {data_type.value} via {converter.__name__}")
 
 

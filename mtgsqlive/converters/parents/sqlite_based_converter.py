@@ -12,11 +12,13 @@ class SqliteBasedConverter(AbstractConverter, abc.ABC):
     sqlite_engine: sqlalchemy.Engine
 
     def __init__(
-        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType
+        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType, skip_schema: bool = False, output_filename: str = None
     ) -> None:
-        super().__init__(mtgjson_data, output_dir, data_type)
+        super().__init__(mtgjson_data, output_dir, data_type, skip_schema, output_filename)
 
-        db_path = self.output_obj.root_dir.joinpath(f"{data_type.value}.sqlite")
+        # Use custom filename if provided, otherwise use data_type.value
+        filename = output_filename if output_filename else data_type.value
+        db_path = self.output_obj.root_dir.joinpath(f"{filename}.sqlite")
         if not db_path.exists():
             raise FileNotFoundError()
 

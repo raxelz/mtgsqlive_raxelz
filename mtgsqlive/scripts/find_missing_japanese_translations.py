@@ -1,5 +1,6 @@
 import json
 import csv
+import argparse
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Set
 from datetime import datetime
@@ -93,7 +94,7 @@ def write_csv(filename: Path, headers: List[str], rows: List[Tuple]) -> None:
 
 def generate_sql_inserts(found_translations: List[Tuple[str, str, str, str, str, str, str, str]], output_file: Path, batch_size: int = 1000) -> None:
     """
-    Generate SQL INSERT statements for found translations using batch inserts.
+    Generate SQL INSERT statements for found translations using safe batch inserts.
     
     Args:
         found_translations: List of tuples containing translation data
@@ -101,41 +102,77 @@ def generate_sql_inserts(found_translations: List[Tuple[str, str, str, str, str,
         batch_size: Number of values to include in each batch insert
     """
     with open(output_file, "w", encoding="utf-8") as f:
-        # Write header
+        # Write header and explanation
         f.write("-- Generated SQL inserts for missing Japanese translations\n")
-        f.write(f"-- Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        f.write(f"-- Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("-- IMPORTANT: This script uses INSERT IGNORE to prevent duplicates\n")
+        f.write("-- It will NOT overwrite existing Japanese translations\n\n")
         f.write("START TRANSACTION;\n\n")
         
         # Process translations in batches
         for i in range(0, len(found_translations), batch_size):
             batch = found_translations[i:i + batch_size]
             
-            # Create the VALUES part of the INSERT statement
-            values = []
+            # Write individual INSERT statements with existence check
+            # This prevents duplicates by checking if the record already exists
             for _, _, _, translation, type_line, text, flavor_text, uuid in batch:
-                # Escape single quotes in text and type
-                escaped_text = text.replace("'", "''") if text else ""
-                escaped_type = type_line.replace("'", "''") if type_line else ""
-                escaped_flavor = flavor_text.replace("'", "''") if flavor_text else ""
-                values.append(f"('{uuid}', 'Japanese', '{translation}', '{escaped_type}', '{escaped_text}', '{escaped_flavor}')")
-            
-            # Write the batch insert statement
-            sql = "INSERT INTO cardForeignData (uuid, language, name, type, text, flavorText)\n"
-            sql += "VALUES\n"
-            sql += ",\n".join(values) + "\n"
-            sql += "ON DUPLICATE KEY UPDATE\n"
-            sql += "  name = VALUES(name),\n"
-            sql += "  type = VALUES(type),\n"
-            sql += "  text = VALUES(text),\n"
-            sql += "  flavorText = VALUES(flavorText);\n\n"
-            f.write(sql)
+                escaped_translation = translation.replace("\\", "\\\\").replace("'", "''") if translation else ""
+                escaped_text = text.replace("\\", "\\\\").replace("'", "''") if text else ""
+                escaped_type = type_line.replace("\\", "\\\\").replace("'", "''") if type_line else ""
+                escaped_flavor = flavor_text.replace("\\", "\\\\").replace("'", "''") if flavor_text else ""
+                
+                sql = f"""INSERT INTO cardForeignData (uuid, language, name, type, text, flavorText)
+SELECT '{uuid}', 'Japanese', '{escaped_translation}', '{escaped_type}', '{escaped_text}', '{escaped_flavor}'
+WHERE NOT EXISTS (
+    SELECT 1 FROM cardForeignData 
+    WHERE uuid = '{uuid}' AND language = 'Japanese'
+);
+"""
+                f.write(sql)
         
-        f.write("COMMIT;\n")
+        f.write("COMMIT;\n\n")
+        
+        # Add a verification query
+        f.write("-- Verification query to check inserted records\n")
+        f.write("-- SELECT COUNT(*) as japanese_translations_count FROM cardForeignData WHERE language = 'Japanese';\n")
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Find missing Japanese translations in MTGJSON data")
+    parser.add_argument(
+        "-i",
+        "--input",
+        type=str,
+        default="AllPrintings.json",
+        help="Path to AllPrintings.json file",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=str,
+        default="output",
+        help="Directory to write output files",
+    )
+    parser.add_argument(
+        "--after-date",
+        type=str,
+        help="Only include sets released after this date (format: YYYY-MM-DD)",
+    )
+    return parser.parse_args()
 
 def main():
+    args = parse_args()
+    
     # Load MTGJSON data
-    with open("AllPrintings.json", "r", encoding="utf-8") as f:
+    with open(args.input, "r", encoding="utf-8") as f:
         mtgjson_data = json.load(f)
+    
+    # Filter by date if specified
+    if args.after_date:
+        for set_key in list(mtgjson_data["data"].keys()):
+            set_data = mtgjson_data["data"][set_key]
+            release_date = set_data.get("releaseDate", "")
+            if release_date <= args.after_date:
+                del mtgjson_data["data"][set_key]
     
     # Build dictionary of known Japanese translations
     known_translations = build_japanese_translations_dict(mtgjson_data)
@@ -147,7 +184,7 @@ def main():
     )
     
     # Create output directory if it doesn't exist
-    output_dir = Path("output")
+    output_dir = Path(args.output_dir)
     output_dir.mkdir(exist_ok=True)
     
     # Write found translations to CSV

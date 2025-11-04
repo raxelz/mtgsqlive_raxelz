@@ -11,9 +11,9 @@ nested_dict: Any = lambda: defaultdict(nested_dict)
 
 class SqlLikeConverter(AbstractConverter, abc.ABC):
     def __init__(
-        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType
+        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType, skip_schema: bool = False, output_filename: Optional[str] = None
     ) -> None:
-        super().__init__(mtgjson_data, output_dir, data_type)
+        super().__init__(mtgjson_data, output_dir, data_type, skip_schema, output_filename)
         self.batch_size = 2_000  # Default batch size for inserts
 
     @abc.abstractmethod

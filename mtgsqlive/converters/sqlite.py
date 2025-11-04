@@ -13,22 +13,25 @@ nested_dict: Any = lambda: defaultdict(nested_dict)
 
 class SqliteConverter(SqlLikeConverter):
     def __init__(
-        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType
+        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType, skip_schema: bool = False, output_filename: str = None
     ) -> None:
-        super().__init__(mtgjson_data, output_dir, data_type)
+        super().__init__(mtgjson_data, output_dir, data_type, skip_schema, output_filename)
 
+        # Use custom filename if provided, otherwise use data_type.value
+        filename = output_filename if output_filename else data_type.value
         self.output_obj.fp = sqlite3.connect(
-            self.output_obj.root_dir.joinpath(f"{data_type.value}.sqlite")
+            self.output_obj.root_dir.joinpath(f"{filename}.sqlite")
         )
         self.output_obj.fp.execute("pragma journal_mode=wal;")
 
     def convert(self) -> None:
-        sql_schema_as_dict = self._generate_sql_schema_dict()
-        schema_query = self._convert_schema_dict_to_query(
-            sql_schema_as_dict, engine="", primary_key_op=None
-        )
-
-        self.output_obj.fp.executescript(schema_query)
+        if not self.skip_schema:
+            # Only create schema if not skipping
+            sql_schema_as_dict = self._generate_sql_schema_dict()
+            schema_query = self._convert_schema_dict_to_query(
+                sql_schema_as_dict, engine="", primary_key_op=None
+            )
+            self.output_obj.fp.executescript(schema_query)
 
         insert_data_generator = self.generate_database_insert_statements()
         self.write_statements_to_file(insert_data_generator)

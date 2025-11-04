@@ -6,9 +6,9 @@ from .parents import SqliteBasedConverter
 
 class CsvConverter(SqliteBasedConverter):
     def __init__(
-        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType
+        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType, skip_schema: bool = False, output_filename: str = None
     ) -> None:
-        super().__init__(mtgjson_data, output_dir, data_type)
+        super().__init__(mtgjson_data, output_dir, data_type, skip_schema, output_filename)
         self.output_obj.root_dir.joinpath("csv").mkdir(parents=True, exist_ok=True)
 
     def convert(self) -> None:
