@@ -1,7 +1,10 @@
 from typing import Any, Dict
 
-import pyarrow
-import pyarrow.parquet
+try:
+    import pyarrow
+    import pyarrow.parquet
+except ImportError:
+    pyarrow = None
 
 from ..enums import MtgjsonDataType
 from .parents import SqliteBasedConverter

@@ -6,6 +6,13 @@ from collections import OrderedDict
 from datetime import datetime
 from typing import Any, Dict
 
+from mtgsqlive.converters import (
+    CsvConverter,
+    MysqlConverter,
+    ParquetConverter,
+    PostgresqlConverter,
+    SqliteConverter,
+)
 from mtgsqlive.enums.data_type import MtgjsonDataType
 
 TOP_LEVEL_DIR: pathlib.Path = pathlib.Path(__file__).resolve().parent.parent
@@ -34,33 +41,13 @@ def init_logger() -> None:
 
 
 def get_converters() -> Dict[str, Any]:
-    def _mysql():
-        from mtgsqlive.converters.mysql import MysqlConverter
-        return MysqlConverter
-
-    def _postgresql():
-        from mtgsqlive.converters.postgresql import PostgresqlConverter
-        return PostgresqlConverter
-
-    def _sqlite():
-        from mtgsqlive.converters.sqlite import SqliteConverter
-        return SqliteConverter
-
-    def _csv():
-        from mtgsqlive.converters.csv import CsvConverter
-        return CsvConverter
-
-    def _parquet():
-        from mtgsqlive.converters.parquet import ParquetConverter
-        return ParquetConverter
-
     return OrderedDict(
         {
-            "mysql": _mysql,
-            "postgresql": _postgresql,
-            "sqlite": _sqlite,
-            "csv": _csv,
-            "parquet": _parquet,
+            "mysql": MysqlConverter,
+            "postgresql": PostgresqlConverter,
+            "sqlite": SqliteConverter,
+            "csv": CsvConverter,
+            "parquet": ParquetConverter,
         }
     )
 
@@ -204,8 +191,7 @@ def main() -> None:
                 if release_date <= args.after_date:
                     del mtgjson_input_data["data"][set_key]
 
-        for converter_loader in converters_map.values():
-            converter = converter_loader()
+        for converter in converters_map.values():
             LOGGER.info(f"Converting {data_type.value} via {converter.__name__}")
             converter(mtgjson_input_data, args.output_dir, data_type, skip_schema, output_filename).convert()
             LOGGER.info(f"Converted {data_type.value} via {converter.__name__}")

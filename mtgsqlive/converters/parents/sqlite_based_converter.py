@@ -1,7 +1,10 @@
 import abc
 from typing import Any, Dict, List
 
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 import sqlalchemy
 
 from ...enums import MtgjsonDataType
@@ -30,5 +33,5 @@ class SqliteBasedConverter(AbstractConverter, abc.ABC):
             table_names = [r.name for r in result]
         return table_names
 
-    def get_table_dataframe(self, table_name: str) -> pd.DataFrame:
+    def get_table_dataframe(self, table_name: str) -> "pd.DataFrame":
         return pd.read_sql_table(table_name, self.sqlite_engine)
