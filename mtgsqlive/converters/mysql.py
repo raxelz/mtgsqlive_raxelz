@@ -112,15 +112,15 @@ class MysqlConverter(SqlLikeConverter):
 
             if isinstance(value, list):
                 pre_processed_values.append(
-                    '"'
+                    "'"
                     + pymysql.converters.escape_string(", ".join(map(str, value)))
-                    + '"'
+                    + "'"
                 )
             elif isinstance(value, bool):
                 pre_processed_values.append("1" if value else "0")
             else:
                 pre_processed_values.append(
-                    '"' + pymysql.converters.escape_string(str(value)) + '"'
+                    "'" + pymysql.converters.escape_string(str(value)) + "'"
                 )
 
         return ", ".join(pre_processed_values)
