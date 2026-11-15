@@ -1,8 +1,6 @@
 from datetime import datetime
 from typing import Any, Dict, Iterator
 
-import pymysql.converters
-
 from .parents import SqlLikeConverter
 from .parents.sql_like import MtgjsonDataType
 
@@ -111,17 +109,13 @@ class MysqlConverter(SqlLikeConverter):
                 continue
 
             if isinstance(value, list):
-                pre_processed_values.append(
-                    '"'
-                    + pymysql.converters.escape_string(", ".join(map(str, value)))
-                    + '"'
-                )
+                escaped = ", ".join(map(str, value)).replace("'", "''")
+                pre_processed_values.append("'" + escaped + "'")
             elif isinstance(value, bool):
                 pre_processed_values.append("1" if value else "0")
             else:
-                pre_processed_values.append(
-                    '"' + pymysql.converters.escape_string(str(value)) + '"'
-                )
+                escaped = str(value).replace("'", "''")
+                pre_processed_values.append("'" + escaped + "'")
 
         return ", ".join(pre_processed_values)
 
