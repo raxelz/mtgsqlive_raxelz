@@ -76,6 +76,11 @@ def parse_args() -> argparse.Namespace:
         nargs="*",
         help="Transpose specific sets instead of all sets",
     )
+    parser.add_argument(
+        "--after-date",
+        type=str,
+        help="Only include sets released after this date (format: YYYY-MM-DD)",
+    )
 
     converter_group = parser.add_argument_group(title="Converters")
     converter_group.add_argument(
@@ -111,24 +116,84 @@ def main() -> None:
             if not getattr(args, converter_input_param):
                 del converters_map[converter_input_param]
 
-    mtgjson_input_dir = pathlib.Path(args.input_dir).expanduser()
-    for data_type in MtgjsonDataType:
-        mtgjson_input_file = mtgjson_input_dir.joinpath(f"{data_type.value}.json")
-        if not mtgjson_input_file.exists():
-            LOGGER.error(f"Cannot locate {mtgjson_input_file}, skipping.")
-            continue
+    mtgjson_input_path = pathlib.Path(args.input_dir).expanduser()
 
-        with mtgjson_input_file.open(encoding="utf-8") as fp:
-            mtgjson_input_data = json.load(fp)
+    # Handle both file and directory inputs
+    if mtgjson_input_path.is_file():
+        # If input is a file, load it and check its structure
+        with mtgjson_input_path.open(encoding="utf-8") as fp:
+            loaded_data = json.load(fp)
+
+        # Check if this is a single-set file or a multi-set file
+        is_single_set = False
+        if "data" in loaded_data and isinstance(loaded_data["data"], dict):
+            # Check if data contains a single set (has 'code' or 'baseSetSize' keys)
+            # rather than being a dictionary of sets
+            if "code" in loaded_data["data"] or "baseSetSize" in loaded_data["data"]:
+                is_single_set = True
+
+        if is_single_set:
+            # Wrap single-set data into AllPrintings format
+            set_code = loaded_data["data"].get("code", mtgjson_input_path.stem.upper())
+            LOGGER.info(f"Detected single-set file for set: {set_code}")
+
+            files_to_process = [(
+                MtgjsonDataType.MTGJSON_CARDS,
+                {
+                    "meta": loaded_data.get("meta", {}),
+                    "data": {set_code: loaded_data["data"]}
+                },
+                True,  # skip_schema flag for single-set files
+                set_code  # output_filename for single-set files
+            )]
+        else:
+            # Multi-set file - find matching data type
+            filename = mtgjson_input_path.stem
+            matching_data_type = None
+            for data_type in MtgjsonDataType:
+                if data_type.value == filename:
+                    matching_data_type = data_type
+                    break
+
+            if matching_data_type is None:
+                LOGGER.error(f"Unknown file type: {filename}")
+                return
+
+            files_to_process = [(matching_data_type, loaded_data, False, None)]  # Don't skip schema, use default filename
+    else:
+        # If input is a directory, process all data types
+        mtgjson_input_dir = mtgjson_input_path
+        files_to_process = []
+
+        for data_type in MtgjsonDataType:
+            mtgjson_input_file = mtgjson_input_dir.joinpath(f"{data_type.value}.json")
+            if not mtgjson_input_file.exists():
+                LOGGER.error(f"Cannot locate {mtgjson_input_file}, skipping.")
+                continue
+
+            with mtgjson_input_file.open(encoding="utf-8") as fp:
+                mtgjson_input_data = json.load(fp)
+
+            files_to_process.append((data_type, mtgjson_input_data, False, None))  # Don't skip schema, use default filename
+
+    # Process all files
+    for data_type, mtgjson_input_data, skip_schema, output_filename in files_to_process:
 
         if args.sets:
             for set_key in list(mtgjson_input_data["data"].keys()):
                 if set_key not in args.sets:
                     del mtgjson_input_data["data"][set_key]
 
+        if args.after_date:
+            for set_key in list(mtgjson_input_data["data"].keys()):
+                set_data = mtgjson_input_data["data"][set_key]
+                release_date = set_data.get("releaseDate", "")
+                if release_date <= args.after_date:
+                    del mtgjson_input_data["data"][set_key]
+
         for converter in converters_map.values():
             LOGGER.info(f"Converting {data_type.value} via {converter.__name__}")
-            converter(mtgjson_input_data, args.output_dir, data_type).convert()
+            converter(mtgjson_input_data, args.output_dir, data_type, skip_schema, output_filename).convert()
             LOGGER.info(f"Converted {data_type.value} via {converter.__name__}")
 
 

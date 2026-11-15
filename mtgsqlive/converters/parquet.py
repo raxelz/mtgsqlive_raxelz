@@ -1,7 +1,10 @@
 from typing import Any, Dict
 
-import pyarrow
-import pyarrow.parquet
+try:
+    import pyarrow
+    import pyarrow.parquet
+except ImportError:
+    pyarrow = None
 
 from ..enums import MtgjsonDataType
 from .parents import SqliteBasedConverter
@@ -9,9 +12,9 @@ from .parents import SqliteBasedConverter
 
 class ParquetConverter(SqliteBasedConverter):
     def __init__(
-        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType
+        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType, skip_schema: bool = False, output_filename: str = None
     ) -> None:
-        super().__init__(mtgjson_data, output_dir, data_type)
+        super().__init__(mtgjson_data, output_dir, data_type, skip_schema, output_filename)
         self.output_obj.root_dir.joinpath("parquet").mkdir(parents=True, exist_ok=True)
 
     def convert(self) -> None:

@@ -19,6 +19,8 @@ class AbstractConverter(abc.ABC):
     mtgjson_data: Dict[str, Any]
     output_obj: OutputObject
     data_type: MtgjsonDataType
+    skip_schema: bool
+    output_filename: Optional[str]
 
     set_keys_to_skip = {
         "booster",  # Broken out into BoosterContents, BoosterContentWeights, BoosterSheets, BoosterSheetCards
@@ -38,11 +40,13 @@ class AbstractConverter(abc.ABC):
     }
 
     def __init__(
-        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType
+        self, mtgjson_data: Dict[str, Any], output_dir: str, data_type: MtgjsonDataType, skip_schema: bool = False, output_filename: Optional[str] = None
     ) -> None:
         self.mtgjson_data = mtgjson_data
         self.output_obj = OutputObject(pathlib.Path(output_dir).expanduser())
         self.data_type = data_type
+        self.skip_schema = skip_schema
+        self.output_filename = output_filename
 
     @abc.abstractmethod
     def convert(self) -> None:
